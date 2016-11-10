@@ -324,9 +324,13 @@ function WebGLProgram( renderer, code, material, parameters ) {
 			'#define GAMMA_FACTOR ' + gammaFactorDefine,
 
 			'#define MAX_BONES ' + parameters.maxBones,
+			'#define MAX_INSTANCES ' + parameters.maxInstances,
+
+			parameters.instancing ? '#define USE_INSTANCING' : '',
+			parameters.instancing && parameters.supportsVertexTextures ? '#define USE_INSTANCING_TEXTURE' : '',
+
 			( parameters.useFog && parameters.fog ) ? '#define USE_FOG' : '',
 			( parameters.useFog && parameters.fogExp ) ? '#define FOG_EXP2' : '',
-
 
 			parameters.map ? '#define USE_MAP' : '',
 			parameters.envMap ? '#define USE_ENVMAP' : '',
@@ -363,11 +367,8 @@ function WebGLProgram( renderer, code, material, parameters ) {
 			parameters.logarithmicDepthBuffer ? '#define USE_LOGDEPTHBUF' : '',
 			parameters.logarithmicDepthBuffer && renderer.extensions.get( 'EXT_frag_depth' ) ? '#define USE_LOGDEPTHBUF_EXT' : '',
 
-			'uniform mat4 modelMatrix;',
-			'uniform mat4 modelViewMatrix;',
 			'uniform mat4 projectionMatrix;',
 			'uniform mat4 viewMatrix;',
-			'uniform mat3 normalMatrix;',
 			'uniform vec3 cameraPosition;',
 
 			'attribute vec3 position;',
@@ -411,6 +412,14 @@ function WebGLProgram( renderer, code, material, parameters ) {
 			'	attribute vec4 skinWeight;',
 
 			'#endif',
+
+			'#ifdef USE_INSTANCING',
+
+			'	attribute float instanceIndex;',
+
+			'#endif',
+
+			ShaderChunk[ 'model_matrix_pars_vertex' ],
 
 			'\n'
 

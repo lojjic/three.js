@@ -112,7 +112,10 @@ function WebGLPrograms( renderer, capabilities ) {
 		// heuristics to create shader parameters according to lights in the scene
 		// (not to blow over maxLights budget)
 
-		var maxBones = allocateBones( object );
+		var instancing = Array.isArray( object );
+
+		var maxBones = instancing ? 0 : allocateBones( object );
+
 		var precision = renderer.getPrecision();
 
 		if ( material.precision !== null ) {
@@ -127,11 +130,39 @@ function WebGLPrograms( renderer, capabilities ) {
 
 		}
 
+		var shadowMapEnabled = false;
+
+		if ( renderer.shadowMap.enabled && lights.shadows.length > 0 ) {
+
+			if ( instancing ) {
+
+				for ( var i = 0, l = object.length; i < l; i++ ) {
+
+					if ( object[i].receiveShadow ) {
+
+						shadowMapEnabled = true;
+						break;
+
+					}
+
+				}
+
+			} else if ( object.receiveShadow ) {
+
+				shadowMapEnabled = true;
+
+			}
+
+		}
+
 		var currentRenderTarget = renderer.getCurrentRenderTarget();
 
 		var parameters = {
 
 			shaderID: shaderID,
+
+			instancing: instancing,
+			maxInstances: renderer.getMaxInstancingBatchSize(),
 
 			precision: precision,
 			supportsVertexTextures: capabilities.vertexTextures,
@@ -171,7 +202,7 @@ function WebGLPrograms( renderer, capabilities ) {
 
 			skinning: material.skinning,
 			maxBones: maxBones,
-			useVertexTexture: capabilities.floatVertexTextures && object && object.skeleton && object.skeleton.useVertexTexture,
+			useVertexTexture: capabilities.floatVertexTextures && object.skeleton && object.skeleton.useVertexTexture,
 
 			morphTargets: material.morphTargets,
 			morphNormals: material.morphNormals,
@@ -187,7 +218,7 @@ function WebGLPrograms( renderer, capabilities ) {
 			numClippingPlanes: nClipPlanes,
 			numClipIntersection: nClipIntersection,
 
-			shadowMapEnabled: renderer.shadowMap.enabled && object.receiveShadow && lights.shadows.length > 0,
+			shadowMapEnabled: shadowMapEnabled,
 			shadowMapType: renderer.shadowMap.type,
 
 			toneMapping: renderer.toneMapping,
