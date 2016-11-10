@@ -21,7 +21,9 @@ import { WebGLTextures } from './webgl/WebGLTextures';
 import { WebGLProperties } from './webgl/WebGLProperties';
 import { WebGLState } from './webgl/WebGLState';
 import { WebGLCapabilities } from './webgl/WebGLCapabilities';
+import { BufferAttribute } from '../core/BufferAttribute';
 import { BufferGeometry } from '../core/BufferGeometry';
+import { DataTexture } from '../textures/DataTexture';
 import { WebGLExtensions } from './webgl/WebGLExtensions';
 import { Vector3 } from '../math/Vector3';
 import { Sphere } from '../math/Sphere';
@@ -29,6 +31,7 @@ import { WebGLClipping } from './webgl/WebGLClipping';
 import { Frustum } from '../math/Frustum';
 import { Vector4 } from '../math/Vector4';
 import { Color } from '../math/Color';
+import { _Math } from '../math/Math';
 
 /**
  * @author supereggbert / http://www.paulbrunt.co.uk/
@@ -56,8 +59,11 @@ function WebGLRenderer( parameters ) {
 
 	var lights = [];
 
+	var opaqueInstancedGeometryMap = {};
 	var opaqueObjects = [];
 	var opaqueObjectsLastIndex = - 1;
+
+	var transparentInstancedGeometryMap = {};
 	var transparentObjects = [];
 	var transparentObjectsLastIndex = - 1;
 
@@ -80,7 +86,13 @@ function WebGLRenderer( parameters ) {
 
 	// scene graph
 
-	this.sortObjects = true;
+	this.sortOpaqueObjects = false;
+	this.sortTransparentObjects = true;
+
+	// geometry instancing
+
+	this.autoInstancing = true;
+	this.minInstancingBatchSize = 2;
 
 	// user-defined clipping
 
@@ -163,7 +175,7 @@ function WebGLRenderer( parameters ) {
 		_projScreenMatrix = new Matrix4(),
 
 		_vector3 = new Vector3(),
-		_matrix4 = new Matrix4(), 
+		_matrix4 = new Matrix4(),
 		_matrix42 = new Matrix4(),
 
 		// light arrays cache
@@ -172,18 +184,18 @@ function WebGLRenderer( parameters ) {
 
 			hash: '',
 
-		ambient: [ 0, 0, 0 ],
-		directional: [],
-		directionalShadowMap: [],
-		directionalShadowMatrix: [],
-		spot: [],
-		spotShadowMap: [],
-		spotShadowMatrix: [],
-		rectArea: [],
-		point: [],
-		pointShadowMap: [],
-		pointShadowMatrix: [],
-		hemi: [],
+			ambient: [ 0, 0, 0 ],
+			directional: [],
+			directionalShadowMap: [],
+			directionalShadowMatrix: [],
+			spot: [],
+			spotShadowMap: [],
+			spotShadowMatrix: [],
+			rectArea: [],
+			point: [],
+			pointShadowMap: [],
+			pointShadowMatrix: [],
+			hemi: [],
 
 			shadows: []
 
@@ -273,7 +285,12 @@ function WebGLRenderer( parameters ) {
 	extensions.get( 'OES_texture_half_float' );
 	extensions.get( 'OES_texture_half_float_linear' );
 	extensions.get( 'OES_standard_derivatives' );
-	extensions.get( 'ANGLE_instanced_arrays' );
+
+	if ( ! extensions.get( 'ANGLE_instanced_arrays' ) ) {
+
+		this.autoInstancing = false;
+
+	}
 
 	if ( extensions.get( 'OES_element_index_uint' ) ) {
 
@@ -294,6 +311,24 @@ function WebGLRenderer( parameters ) {
 
 	var bufferRenderer = new WebGLBufferRenderer( _gl, extensions, _infoRender );
 	var indexedBufferRenderer = new WebGLIndexedBufferRenderer( _gl, extensions, _infoRender );
+
+	//
+
+	var instancingIndexAttribute = null;
+	var instancingTexture = null;
+	var instancingTextureSize = 64;
+
+	// 4x4 world matrix + 3x3 normal matrix (7 vector uniforms)
+	var maxInstancingBatchSize = Math.floor( capabilities.floatVertexTextures ?
+			instancingTextureSize * instancingTextureSize / 7 :
+			Math.min( 64, ( capabilities.maxVertexUniforms - 20 ) / 7 ) );
+
+	if ( capabilities.floatVertexTextures ) {
+
+		// Pushing the instancing texture will be slower than repeat rendering for a small number of instances.
+		this.minInstancingBatchSize = 32;
+
+	}
 
 	//
 
@@ -462,6 +497,34 @@ function WebGLRenderer( parameters ) {
 
 	};
 
+	// Instancing
+
+	this.getMaxInstancingBatchSize = function () {
+
+		return maxInstancingBatchSize;
+
+	};
+
+	this.getInstancingTextureSize = function () {
+
+		return instancingTextureSize;
+
+	};
+
+	this.setInstancingTextureSize = function ( size ) {
+
+		if ( ! _Math.isPowerOfTwo( size ) ) {
+
+			console.error( 'THREE.WebGLRenderer.setInstancingTextureSize: invalid instancing size, must be a power of two.' );
+			return;
+
+		}
+
+		instancingTextureSize = size;
+		maxInstancingBatchSize = Math.floor( size * size / 7 );
+
+	};
+
 	// Clearing
 
 	this.getClearColor = function () {
@@ -537,8 +600,11 @@ function WebGLRenderer( parameters ) {
 
 	this.dispose = function() {
 
+		transparentInstancedGeometryMap = {};
 		transparentObjects = [];
 		transparentObjectsLastIndex = -1;
+
+		opaqueInstancedGeometryMap = {};
 		opaqueObjects = [];
 		opaqueObjectsLastIndex = -1;
 
@@ -693,6 +759,7 @@ function WebGLRenderer( parameters ) {
 
 		setMaterial( material );
 
+		var instancing = Array.isArray( object );
 		var program = setProgram( camera, fog, material, object );
 
 		var updateBuffers = false;
@@ -709,7 +776,7 @@ function WebGLRenderer( parameters ) {
 
 		var morphTargetInfluences = object.morphTargetInfluences;
 
-		if ( morphTargetInfluences !== undefined ) {
+		if ( morphTargetInfluences !== undefined && material.morphTargets ) {
 
 			var activeInfluences = [];
 
@@ -760,6 +827,7 @@ function WebGLRenderer( parameters ) {
 			program.getUniforms().setValue(
 				_gl, 'morphTargetInfluences', morphInfluences );
 
+
 			updateBuffers = true;
 
 		}
@@ -792,7 +860,7 @@ function WebGLRenderer( parameters ) {
 
 		if ( updateBuffers ) {
 
-			setupVertexAttributes( material, program, geometry );
+			setupVertexAttributes( material, program, geometry, instancing ? object.length : undefined );
 
 			if ( index !== null ) {
 
@@ -911,9 +979,13 @@ function WebGLRenderer( parameters ) {
 
 			if ( geometry.maxInstancedCount > 0 ) {
 
-				renderer.renderInstances( geometry, drawStart, drawCount );
+				renderer.renderInstances( geometry, geometry.maxInstancedCount, drawStart, drawCount );
 
 			}
+
+		} else if ( instancing ) {
+
+			renderer.renderInstances( geometry, object.length, drawStart, drawCount );
 
 		} else {
 
@@ -923,11 +995,11 @@ function WebGLRenderer( parameters ) {
 
 	};
 
-	function setupVertexAttributes( material, program, geometry, startIndex ) {
+	function setupVertexAttributes( material, program, geometry, instanceCount, startIndex ) {
 
 		var extension;
 
-		if ( geometry && geometry.isInstancedBufferGeometry ) {
+		if ( geometry && ( geometry.isInstancedBufferGeometry || instanceCount !== undefined ) ) {
 
 			extension = extensions.get( 'ANGLE_instanced_arrays' );
 
@@ -1017,6 +1089,38 @@ function WebGLRenderer( parameters ) {
 
 					}
 
+				} else if ( name === 'instanceIndex' ) {
+
+					if ( ! instancingIndexAttribute || instancingIndexAttribute.count !== maxInstancingBatchSize ) {
+
+						if ( instancingIndexAttribute ) {
+
+							properties.delete( instancingIndexAttribute );
+
+						}
+
+						var indexArray = new Float32Array( maxInstancingBatchSize );
+
+						for ( var index = 0; index < maxInstancingBatchSize; index++ ) {
+
+							indexArray[ index ] = index;
+
+						}
+
+						instancingIndexAttribute = new BufferAttribute( indexArray, 1 );
+						objects.updateAttribute( instancingIndexAttribute, _gl.ARRAY_BUFFER );
+
+					}
+
+					var indexBuffer = objects.getAttributeBuffer( instancingIndexAttribute );
+					var indexNormalized = instancingIndexAttribute.normalized;
+					var indexSize = instancingIndexAttribute.itemSize;
+
+					state.enableAttributeAndDivisor( programAttribute, 1, extension );
+
+					_gl.bindBuffer( _gl.ARRAY_BUFFER, indexBuffer );
+					_gl.vertexAttribPointer( programAttribute, indexSize, _gl.FLOAT, indexNormalized, 0, startIndex * indexSize * instancingIndexAttribute.array.BYTES_PER_ELEMENT );
+
 				} else if ( materialDefaultAttributeValues !== undefined ) {
 
 					var value = materialDefaultAttributeValues[ name ];
@@ -1082,7 +1186,7 @@ function WebGLRenderer( parameters ) {
 
 		} else {
 
-			return a.id - b.id;
+			return a.object.id - b.object.id;
 
 		}
 
@@ -1100,7 +1204,7 @@ function WebGLRenderer( parameters ) {
 
 		} else {
 
-			return a.id - b.id;
+			return a.object.id - b.object.id;
 
 		}
 
@@ -1141,6 +1245,9 @@ function WebGLRenderer( parameters ) {
 		opaqueObjectsLastIndex = - 1;
 		transparentObjectsLastIndex = - 1;
 
+		resetInstancedGeometryMap(opaqueInstancedGeometryMap);
+		resetInstancedGeometryMap(transparentInstancedGeometryMap);
+
 		sprites.length = 0;
 		lensFlares.length = 0;
 
@@ -1149,12 +1256,16 @@ function WebGLRenderer( parameters ) {
 
 		projectObject( scene, camera );
 
-		opaqueObjects.length = opaqueObjectsLastIndex + 1;
-		transparentObjects.length = transparentObjectsLastIndex + 1;
+		if ( _this.sortOpaqueObjects === true ) {
 
-		if ( _this.sortObjects === true ) {
-
+			opaqueObjects.length = opaqueObjectsLastIndex + 1;
 			opaqueObjects.sort( painterSortStable );
+
+		}
+
+		if ( _this.sortTransparentObjects === true ) {
+
+			transparentObjects.length = transparentObjectsLastIndex + 1;
 			transparentObjects.sort( reversePainterSortStable );
 
 		}
@@ -1217,7 +1328,7 @@ function WebGLRenderer( parameters ) {
 			backgroundBoxMesh.material.uniforms[ "tCube" ].value = background;
 			backgroundBoxMesh.modelViewMatrix.multiplyMatrices( backgroundCamera2.matrixWorldInverse, backgroundBoxMesh.matrixWorld );
 
-			objects.update( backgroundBoxMesh );
+			objects.updateObject( backgroundBoxMesh );
 
 			_this.renderBufferDirect( backgroundCamera2, null, backgroundBoxMesh.geometry, backgroundBoxMesh.material, backgroundBoxMesh, null );
 
@@ -1225,7 +1336,7 @@ function WebGLRenderer( parameters ) {
 
 			backgroundPlaneMesh.material.map = background;
 
-			objects.update( backgroundPlaneMesh );
+			objects.updateObject( backgroundPlaneMesh );
 
 			_this.renderBufferDirect( backgroundCamera, null, backgroundPlaneMesh.geometry, backgroundPlaneMesh.material, backgroundPlaneMesh, null );
 
@@ -1233,25 +1344,21 @@ function WebGLRenderer( parameters ) {
 
 		//
 
-		if ( scene.overrideMaterial ) {
-
-			var overrideMaterial = scene.overrideMaterial;
-
-			renderObjects( opaqueObjects, scene, camera, overrideMaterial );
-			renderObjects( transparentObjects, scene, camera, overrideMaterial );
-
-		} else {
-
-			// opaque pass (front-to-back order)
+		if ( !scene.overrideMaterial ) {
 
 			state.setBlending( NoBlending );
-			renderObjects( opaqueObjects, scene, camera );
-
-			// transparent pass (back-to-front order)
-
-			renderObjects( transparentObjects, scene, camera );
 
 		}
+
+		// opaque pass
+
+		renderInstancedGeometryMap( opaqueInstancedGeometryMap, scene, camera, scene.overrideMaterial );
+		renderObjectList( opaqueObjects, opaqueObjectsLastIndex + 1, scene, camera, scene.overrideMaterial );
+
+		// transparent pass
+
+		renderObjectList( transparentObjects, transparentObjectsLastIndex + 1, scene, camera, scene.overrideMaterial );
+		renderInstancedGeometryMap( transparentInstancedGeometryMap, scene, camera, scene.overrideMaterial );
 
 		// custom render plugins (post pass)
 
@@ -1276,50 +1383,107 @@ function WebGLRenderer( parameters ) {
 
 	};
 
-	function pushRenderItem( object, geometry, material, z, group ) {
+	function resetInstancedGeometryMap ( instanceGeometryMap ) {
 
-		var array, index;
+		for ( var uuid in instanceGeometryMap ) {
 
-		// allocate the next position in the appropriate array
+			if ( instanceGeometryMap.hasOwnProperty( uuid ) ) {
 
-		if ( material.transparent ) {
+				var instancedGeometry = instanceGeometryMap[ uuid ];
 
-			array = transparentObjects;
-			index = ++ transparentObjectsLastIndex;
+				for (var i = 0, l = instancedGeometry.groups.length; i < l; i ++ ) {
 
-		} else {
+					instancedGeometry.groups[i].objects = [];
 
-			array = opaqueObjects;
-			index = ++ opaqueObjectsLastIndex;
+				}
+
+			}
 
 		}
 
-		// recycle existing render item or grow the array
+	}
 
-		var renderItem = array[ index ];
+	function pushRenderItem( object, geometry, material, z, groupIndex ) {
 
-		if ( renderItem !== undefined ) {
+		if ( _this.autoInstancing && isObjectInstanceable( object, material, geometry, groupIndex ) ) {
 
-			renderItem.id = object.id;
-			renderItem.object = object;
-			renderItem.geometry = geometry;
-			renderItem.material = material;
-			renderItem.z = _vector3.z;
-			renderItem.group = group;
+			var map = material.transparent ? transparentInstancedGeometryMap : opaqueInstancedGeometryMap;
+			var key = geometry.uuid + material.uuid;
+
+			var instancedGeometry = map[ key ];
+
+			if ( ! instancedGeometry ) {
+
+				var groupCount = geometry.groups && geometry.groups.length > 0 ? geometry.groups.length : 1;
+				var groups = [];
+
+				groups.length = groupCount;
+
+				for ( var i = 0; i < groupCount; i ++ ) {
+
+					groups[ i ] = {
+						material: material,
+						objects: []
+					};
+
+				}
+
+				instancedGeometry = {
+					geometry: geometry,
+					groups: groups
+				};
+
+				map[ key ] = instancedGeometry;
+
+			}
+
+			var group = instancedGeometry.groups[ groupIndex || 0 ];
+			group.objects.push(object);
 
 		} else {
 
-			renderItem = {
-				id: object.id,
-				object: object,
-				geometry: geometry,
-				material: material,
-				z: _vector3.z,
-				group: group
-			};
+			var array, index;
 
-			// assert( index === array.length );
-			array.push( renderItem );
+			// allocate the next position in the appropriate array
+
+			if ( material.transparent ) {
+
+				array = transparentObjects;
+				index = ++ transparentObjectsLastIndex;
+
+			} else {
+
+				array = opaqueObjects;
+				index = ++ opaqueObjectsLastIndex;
+
+			}
+
+			// recycle existing render item or grow the array
+
+			var renderItem = array[ index ];
+
+			if ( renderItem !== undefined ) {
+
+				renderItem.object = object;
+				renderItem.geometry = geometry;
+				renderItem.material = material;
+				renderItem.z = z;
+				renderItem.groupIndex = groupIndex;
+
+			} else {
+
+				renderItem = {
+					object: object,
+					geometry: geometry,
+					material: material,
+					z: z,
+					groupIndex: groupIndex
+				};
+
+				// assert( index === array.length );
+				array.push( renderItem );
+
+			}
 
 		}
 
@@ -1376,6 +1540,86 @@ function WebGLRenderer( parameters ) {
 
 	}
 
+	function isMaterialSorted ( material, geometry, groupIndex ) {
+
+		if ( material.transparent ) {
+
+			return _this.sortTransparentObjects;
+
+		} else if ( geometry && material.isMultiMaterial ) {
+
+			var groups = geometry.groups;
+			var materials = material.materials;
+			var groupMaterial;
+
+			if ( groupIndex !== undefined ) {
+
+				groupMaterial = materials[ groups[ groupIndex ].materialIndex ];
+
+				if ( groupMaterial.visible && groupMaterial.transparent ) {
+
+					return _this.sortTransparentObjects;
+
+				}
+
+			} else {
+
+				for ( var i = 0, l = groups.length; i < l; i ++ ) {
+
+					groupMaterial = materials[ groups[ i ].materialIndex ];
+
+					if ( groupMaterial.visible && groupMaterial.transparent ) {
+
+						return _this.sortTransparentObjects;
+
+					}
+
+				}
+
+			}
+		}
+
+		return _this.sortOpaqueObjects;
+
+	}
+
+	function isObjectInstanceable ( object, material, geometry, groupIndex ) {
+
+		return geometry &&
+			! (
+				// CPU draw call sorting is inherently incompatible with instancing, which uses just one draw call.
+
+				isMaterialSorted( material, geometry, groupIndex ) ||
+
+				// onBeforeRender() and onAfterRender() are specifically designed for messing with the renderer's
+				// state (namely uniforms). If they're set then we assume instancing is not an option.
+
+				object.onBeforeRender ||
+				object.onAfterRender ||
+
+				// Skinned meshes pull their bone matrices from objects (specifically Mesh).
+
+				( object.isSkinnedMesh && material.skinning ) ||
+
+				// Morph pull their influences from objects (specifically Mesh).
+
+				( object.morphTargetInfluences && material.morphTargets ) ||
+
+				// InstancedBufferGeometry is manually instanced by the user, not one instance per "object".
+
+				geometry.isInstancedBufferGeometry ||
+
+				// Instanced objects are rendered according to the Geometry draw mode (Mesh.drawMode has been deprecated).
+
+				object.drawMode
+			);
+
+		// Instancing support for dynamic uniforms (coupled with objects), morph target influences and bone matrices could
+		// be made possible by packing the data into an array (or texture) and requiring shaders to look up values with
+		// the instance ID (like our world matrices). However, this could get a bit hairy and isn't supported at present.
+
+	}
+
 	function projectObject( object, camera ) {
 
 		if ( object.visible === false ) return;
@@ -1402,7 +1646,7 @@ function WebGLRenderer( parameters ) {
 
 			} else if ( object.isImmediateRenderObject ) {
 
-				if ( _this.sortObjects === true ) {
+				if ( isMaterialSorted( object.material ) ) {
 
 					_vector3.setFromMatrixPosition( object.matrixWorld );
 					_vector3.applyProjection( _projScreenMatrix );
@@ -1425,14 +1669,14 @@ function WebGLRenderer( parameters ) {
 
 					if ( material.visible === true ) {
 
-						if ( _this.sortObjects === true ) {
+						var geometry = objects.updateObject( object );
+
+						if ( isMaterialSorted( object.material, geometry ) ) {
 
 							_vector3.setFromMatrixPosition( object.matrixWorld );
 							_vector3.applyProjection( _projScreenMatrix );
 
 						}
-
-						var geometry = objects.update( object );
 
 						if ( material.isMultiMaterial ) {
 
@@ -1446,7 +1690,7 @@ function WebGLRenderer( parameters ) {
 
 								if ( groupMaterial.visible === true ) {
 
-									pushRenderItem( object, geometry, groupMaterial, _vector3.z, group );
+									pushRenderItem( object, geometry, groupMaterial, _vector3.z, i );
 
 								}
 
@@ -1476,21 +1720,25 @@ function WebGLRenderer( parameters ) {
 
 	}
 
-	function renderObjects( renderList, scene, camera, overrideMaterial ) {
+	function renderObjectList( renderList, renderListLength, scene, camera, overrideMaterial ) {
 
-		for ( var i = 0, l = renderList.length; i < l; i ++ ) {
+		for ( var i = 0; i < renderListLength; i ++ ) {
 
 			var renderItem = renderList[ i ];
 
 			var object = renderItem.object;
 			var geometry = renderItem.geometry;
-			var material = overrideMaterial === undefined ? renderItem.material : overrideMaterial;
-			var group = renderItem.group;
+			var material = overrideMaterial ? overrideMaterial : renderItem.material;
+			var group = geometry.groups[ renderItem.groupIndex ] || null;
 
 			object.modelViewMatrix.multiplyMatrices( camera.matrixWorldInverse, object.matrixWorld );
 			object.normalMatrix.getNormalMatrix( object.modelViewMatrix );
 
-			object.onBeforeRender( _this, scene, camera, geometry, material, group );
+			if ( object.onBeforeRender ) {
+
+				object.onBeforeRender( _this, scene, camera, geometry, material, group );
+
+			}
 
 			if ( object.isImmediateRenderObject ) {
 
@@ -1508,12 +1756,80 @@ function WebGLRenderer( parameters ) {
 
 			} else {
 
-				_this.renderBufferDirect( camera, scene.fog, geometry, material, object, group );
+				var instanceCount = undefined;
+
+				if ( geometry && geometry.isInstancedBufferGeometry && geometry.maxInstancedCount > 0 ) {
+
+					instanceCount = geometry.maxInstancedCount;
+
+				}
+
+				_this.renderBufferDirect( camera, scene.fog, geometry, material, object, group, instanceCount );
 
 			}
 
-			object.onAfterRender( _this, scene, camera, geometry, material, group );
+			if ( object.onAfterRender ) {
 
+				object.onAfterRender( _this, scene, camera, geometry, material, group );
+
+			}
+
+		}
+
+	}
+
+	function renderInstancedGeometryMap ( instancedGeometryMap, scene, camera, overrideMaterial ) {
+
+		for ( var uuid in instancedGeometryMap ) {
+
+			if ( instancedGeometryMap.hasOwnProperty( uuid ) ) {
+
+				var instancedGeometry = instancedGeometryMap[ uuid ];
+				var geometry = instancedGeometry.geometry;
+
+				for (var groupIndex = 0, groupCount = instancedGeometry.groups.length; groupIndex < groupCount; groupIndex++ ) {
+
+					var instancingGroup = instancedGeometry.groups[ groupIndex ];
+
+					var objects = instancingGroup.objects;
+					var material = overrideMaterial ? overrideMaterial : instancingGroup.material;
+
+					if ( objects.length > 0 ) {
+
+						var group = geometry.groups[ groupIndex ] || null;
+
+						for ( var i = 0, l = objects.length; i < l; i++ ) {
+
+							var object = objects[ i ];
+
+							object.modelViewMatrix.multiplyMatrices( camera.matrixWorldInverse, object.matrixWorld );
+							object.normalMatrix.getNormalMatrix( object.modelViewMatrix );
+
+						}
+
+						if ( objects.length < _this.minInstancingBatchSize ) {
+
+							for ( var i = 0, l = objects.length; i < l; i++ ) {
+
+								_this.renderBufferDirect( camera, scene.fog, geometry, material, objects[ i ], group );
+
+							}
+
+						} else {
+
+							for ( var batchOffset = 0; batchOffset < objects.length; batchOffset += maxInstancingBatchSize ) {
+
+								var batch = objects.slice( batchOffset, batchOffset + Math.min( objects.length - batchOffset, maxInstancingBatchSize ) );
+								_this.renderBufferDirect( camera, scene.fog, geometry, material, batch, group );
+
+							}
+
+						}
+
+					}
+				}
+
+			}
 
 		}
 
@@ -1633,6 +1949,13 @@ function WebGLRenderer( parameters ) {
 		}
 
 		materialProperties.fog = fog;
+		materialProperties.instancing = Array.isArray( object );
+
+		if ( materialProperties.instancing ) {
+
+			materialProperties.maxInstances = _this.maxInstancingBatchSize;
+
+		}
 
 		// store the light setup it was created for
 
@@ -1669,15 +1992,27 @@ function WebGLRenderer( parameters ) {
 
 	function setMaterial( material ) {
 
-		material.side === DoubleSide
-			? state.disable( _gl.CULL_FACE )
-			: state.enable( _gl.CULL_FACE );
+		if ( material.side !== DoubleSide ) {
+
+			state.enable( _gl.CULL_FACE );
+
+		} else {
+
+			state.disable( _gl.CULL_FACE );
+
+		}
 
 		state.setFlipSided( material.side === BackSide );
 
-		material.transparent === true
-			? state.setBlending( material.blending, material.blendEquation, material.blendSrc, material.blendDst, material.blendEquationAlpha, material.blendSrcAlpha, material.blendDstAlpha, material.premultipliedAlpha )
-			: state.setBlending( NoBlending );
+		if ( material.transparent === true ) {
+
+			state.setBlending( material.blending, material.blendEquation, material.blendSrc, material.blendDst, material.blendEquationAlpha, material.blendSrcAlpha, material.blendDstAlpha, material.premultipliedAlpha );
+
+		} else {
+
+			state.setBlending( NoBlending );
+
+		}
 
 		state.setDepthFunc( material.depthFunc );
 		state.setDepthTest( material.depthTest );
@@ -1687,7 +2022,7 @@ function WebGLRenderer( parameters ) {
 
 	}
 
-	function setProgram( camera, fog, material, object ) {
+	function updateMaterial( material, camera, fog, object ) {
 
 		var materialProperties = properties.get( material );
 
@@ -1716,6 +2051,10 @@ function WebGLRenderer( parameters ) {
 
 				material.needsUpdate = true;
 
+			} else if ( materialProperties.instancing != Array.isArray( object ) ) {
+
+				material.needsUpdate = true;
+
 			} else if ( material.fog && materialProperties.fog !== fog ) {
 
 				material.needsUpdate = true;
@@ -1730,6 +2069,10 @@ function WebGLRenderer( parameters ) {
 
 				material.needsUpdate = true;
 
+			} else if ( materialProperties.instancing && materialProperties.maxInstances !== _this.maxInstancingBatchSize ) {
+
+				material.needsUpdate = true;
+
 			}
 
 		}
@@ -1740,6 +2083,14 @@ function WebGLRenderer( parameters ) {
 			material.needsUpdate = false;
 
 		}
+
+		return materialProperties;
+
+	}
+
+	function setProgram( camera, fog, material, object ) {
+
+		var materialProperties = updateMaterial( material, camera, fog, object );
 
 		var refreshProgram = false;
 		var refreshMaterial = false;
@@ -1947,13 +2298,101 @@ function WebGLRenderer( parameters ) {
 
 		}
 
-
 		// common matrices
 
-		p_uniforms.set( _gl, object, 'modelViewMatrix' );
-		p_uniforms.set( _gl, object, 'normalMatrix' );
-		p_uniforms.setValue( _gl, 'modelMatrix', object.matrixWorld );
+		if ( Array.isArray(object) ) {
 
+			var modelMatrices = [];
+			var normalMatrices = [];
+
+			for ( var i = 0, l = object.length; i < l; i++ ) {
+
+				var instance = object[ i ];
+
+				modelMatrices[ i ] = instance.matrixWorld;
+				normalMatrices[ i ] = instance.normalMatrix;
+
+			}
+
+			if ( capabilities.floatVertexTextures ) {
+
+				var instancingBuffer;
+
+				if ( ! instancingTexture || instancingTexture.image.width !== instancingTextureSize ) {
+
+					instancingBuffer = new Float32Array( instancingTextureSize * instancingTextureSize * 4 );
+					instancingTexture = new DataTexture( instancingBuffer, instancingTextureSize, instancingTextureSize, RGBAFormat, FloatType );
+
+				} else {
+
+					instancingBuffer = instancingTexture.image.data;
+
+				}
+
+				for ( var i = 0, l = object.length; i < l; i++ ) {
+
+					var modelMatrix = modelMatrices[ i ].elements;
+					var offset = i * 16;
+
+					instancingBuffer[ offset ] = modelMatrix[ 0 ];
+					instancingBuffer[ offset + 1 ] = modelMatrix[ 1 ];
+					instancingBuffer[ offset + 2 ] = modelMatrix[ 2 ];
+					instancingBuffer[ offset + 3 ] = modelMatrix[ 3 ];
+
+					instancingBuffer[ offset + 4 ] = modelMatrix[ 4 ];
+					instancingBuffer[ offset + 5 ] = modelMatrix[ 5 ];
+					instancingBuffer[ offset + 6 ] = modelMatrix[ 6 ];
+					instancingBuffer[ offset + 7 ] = modelMatrix[ 7 ];
+
+					instancingBuffer[ offset + 8 ]  = modelMatrix[ 8 ];
+					instancingBuffer[ offset + 9 ]  = modelMatrix[ 9 ];
+					instancingBuffer[ offset + 10 ] = modelMatrix[ 10 ];
+					instancingBuffer[ offset + 11 ] = modelMatrix[ 11 ];
+
+					instancingBuffer[ offset + 12 ] = modelMatrix[ 12 ];
+					instancingBuffer[ offset + 13 ] = modelMatrix[ 13 ];
+					instancingBuffer[ offset + 14 ] = modelMatrix[ 14 ];
+					instancingBuffer[ offset + 15 ] = modelMatrix[ 15 ];
+
+					var normalMatrix = normalMatrices[ i ].elements;
+					var normalOffset = maxInstancingBatchSize * 16 + i * 12;
+
+					instancingBuffer[ normalOffset ] = normalMatrix[ 0 ];
+					instancingBuffer[ normalOffset + 1 ] = normalMatrix[ 1 ];
+					instancingBuffer[ normalOffset + 2 ] = normalMatrix[ 2 ];
+					instancingBuffer[ normalOffset + 3 ] = 0;
+
+					instancingBuffer[ normalOffset + 4 ] = normalMatrix[ 3 ];
+					instancingBuffer[ normalOffset + 5 ] = normalMatrix[ 4 ];
+					instancingBuffer[ normalOffset + 6 ] = normalMatrix[ 5 ];
+					instancingBuffer[ normalOffset + 7 ] = 0;
+
+					instancingBuffer[ normalOffset + 8 ] = normalMatrix[ 6 ];
+					instancingBuffer[ normalOffset + 9 ] = normalMatrix[ 7 ];
+					instancingBuffer[ normalOffset + 10 ] = normalMatrix[ 8 ];
+					instancingBuffer[ normalOffset + 11 ] = 0;
+
+				}
+
+				instancingTexture.needsUpdate = true;
+
+				p_uniforms.setValue( _gl, 'instancingTexture', instancingTexture );
+				p_uniforms.setValue( _gl, 'instancingTextureSize', instancingTextureSize );
+
+			} else {
+
+				p_uniforms.setValue( _gl, 'modelMatrices', modelMatrices );
+				p_uniforms.setValue( _gl, 'normalMatrices', normalMatrices );
+
+			}
+
+		} else {
+
+			p_uniforms.set( _gl, object, 'modelViewMatrix' );
+			p_uniforms.set( _gl, object, 'normalMatrix' );
+			p_uniforms.setValue( _gl, 'modelMatrix', object.matrixWorld );
+
+		}
 		return program;
 
 	}

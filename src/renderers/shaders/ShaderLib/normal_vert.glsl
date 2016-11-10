@@ -7,6 +7,8 @@ varying vec3 vNormal;
 
 void main() {
 
+	#include <common_vertex>
+
 	vNormal = normalize( normalMatrix * normal );
 
 	#include <begin_vertex>

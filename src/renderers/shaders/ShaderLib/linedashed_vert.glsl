@@ -10,6 +10,7 @@ varying float vLineDistance;
 
 void main() {
 
+	#include <common_vertex>
 	#include <color_vertex>
 
 	vLineDistance = scale * lineDistance;

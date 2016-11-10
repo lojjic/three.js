@@ -10,6 +10,7 @@
 
 void main() {
 
+	#include <common_vertex>
 	#include <uv_vertex>
 	#include <uv2_vertex>
 	#include <color_vertex>
