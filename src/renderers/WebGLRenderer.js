@@ -129,6 +129,7 @@ function WebGLRenderer( parameters ) {
 
 		//
 
+		_textureUnitMap = {},
 		_usedTextureUnits = 0,
 
 		//
@@ -1708,8 +1709,6 @@ function WebGLRenderer( parameters ) {
 
 	function setProgram( camera, fog, material, object ) {
 
-		_usedTextureUnits = 0;
-
 		var materialProperties = properties.get( material );
 
 		if ( _clippingEnabled ) {
@@ -1774,6 +1773,9 @@ function WebGLRenderer( parameters ) {
 
 			_gl.useProgram( program.program );
 			_currentProgram = program.id;
+
+			_usedTextureUnits = 0;
+			_textureUnitMap = {};
 
 			refreshProgram = true;
 			refreshMaterial = true;
@@ -2531,17 +2533,21 @@ function WebGLRenderer( parameters ) {
 
 	// Textures
 
-	function allocTextureUnit() {
+	function allocTextureUnit( identifier ) {
 
-		var textureUnit = _usedTextureUnits;
+		var textureUnit = _textureUnitMap[ identifier ];
 
-		if ( textureUnit >= capabilities.maxTextures ) {
+		if ( textureUnit === undefined ) {
 
-			console.warn( 'WebGLRenderer: trying to use ' + textureUnit + ' texture units while this GPU supports only ' + capabilities.maxTextures );
+			textureUnit = _textureUnitMap[ identifier ] = ++ _usedTextureUnits;
+
+			if ( textureUnit >= capabilities.maxTextures ) {
+
+				console.warn( 'WebGLRenderer: trying to use ' + textureUnit + ' texture units while this GPU supports only ' + capabilities.maxTextures );
+
+			}
 
 		}
-
-		_usedTextureUnits += 1;
 
 		return textureUnit;
 
