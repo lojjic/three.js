@@ -1,3 +1,4 @@
+import { TrianglesDrawMode } from '../constants';
 import { Vector3 } from '../math/Vector3';
 import { Box3 } from '../math/Box3';
 import { EventDispatcher } from './EventDispatcher';
@@ -35,12 +36,19 @@ function BufferGeometry() {
 	this.boundingSphere = null;
 
 	this.drawRange = { start: 0, count: Infinity };
+	this.drawMode = TrianglesDrawMode;
 
 }
 
 Object.assign( BufferGeometry.prototype, EventDispatcher.prototype, {
 
 	isBufferGeometry: true,
+
+	setDrawMode: function ( value ) {
+
+		this.drawMode = value;
+
+	},
 
 	getIndex: function () {
 
@@ -1000,6 +1008,8 @@ Object.assign( BufferGeometry.prototype, EventDispatcher.prototype, {
 	},
 
 	copy: function ( source ) {
+
+		this.drawMode = source.drawMode;
 
 		var index = source.index;
 
