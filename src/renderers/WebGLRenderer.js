@@ -1420,7 +1420,7 @@ function WebGLRenderer( parameters ) {
 
 			if ( ! instancedGeometry ) {
 
-				var groupCount = geometry.groups && geometry.groups.length > 0 ? geometry.groups.length : 1;
+				var groupCount = groupIndex !== null && geometry.groups && geometry.groups.length > 0 ? geometry.groups.length : 1;
 				var groups = [];
 
 				groups.length = groupCount;
@@ -1429,6 +1429,7 @@ function WebGLRenderer( parameters ) {
 
 					groups[ i ] = {
 						material: material,
+						groupIndex: groupIndex,
 						objects: []
 					};
 
@@ -1802,7 +1803,7 @@ function WebGLRenderer( parameters ) {
 
 					if ( objects.length > 0 ) {
 
-						var group = geometry.groups[ groupIndex ] || null;
+						var group = geometry.groups[ instancingGroup.groupIndex ] || null;
 
 						for ( var i = 0, l = objects.length; i < l; i++ ) {
 
