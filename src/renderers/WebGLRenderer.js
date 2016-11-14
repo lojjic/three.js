@@ -623,22 +623,28 @@ function WebGLRenderer( parameters ) {
 
 	function deallocateMaterial( material ) {
 
-		releaseMaterialProgramReference( material );
+		releaseMaterialProgramReferences( material );
 
 		properties.delete( material );
 
 	}
 
 
-	function releaseMaterialProgramReference( material ) {
+	function releaseMaterialProgramReferences( material ) {
 
-		var programInfo = properties.get( material ).program;
+		var materialProperties = properties.get( material );
 
 		material.program = undefined;
 
-		if ( programInfo !== undefined ) {
+		if ( materialProperties.program !== undefined ) {
 
-			programCache.releaseProgram( programInfo );
+			programCache.releaseProgram( materialProperties.program );
+
+		}
+
+		if ( materialProperties.instancingProgram !== undefined ) {
+
+			programCache.releaseProgram( materialProperties.instancingProgram );
 
 		}
 
@@ -1864,25 +1870,32 @@ function WebGLRenderer( parameters ) {
 
 		var code = programCache.getProgramCode( material, parameters );
 
-		var program = materialProperties.program;
+		var instancing = Array.isArray( object );
+		var program = instancing ? materialProperties.instancingProgram : materialProperties.program;
 		var programChange = true;
 
 		if ( program === undefined ) {
 
-			// new material
-			material.addEventListener( 'dispose', onMaterialDispose );
+			if ( materialProperties.program === undefined && materialProperties.instancingProgram === undefined ) {
+
+				// new material
+				material.addEventListener( 'dispose', onMaterialDispose );
+
+			}
 
 		} else if ( program.code !== code ) {
 
 			// changed glsl or parameters
-			releaseMaterialProgramReference( material );
+			programCache.releaseProgram( program );
 
-		} else if ( parameters.shaderID !== undefined ) {
+		} else if ( material.program === program ) {
 
-			// same glsl and uniform list
-			return;
+			if ( parameters.shaderID !== undefined ) {
 
-		} else {
+				// same glsl and uniform list
+				return;
+
+			}
 
 			// only rebuild uniform list
 			programChange = false;
@@ -1917,7 +1930,16 @@ function WebGLRenderer( parameters ) {
 
 			program = programCache.acquireProgram( material, parameters, code );
 
-			materialProperties.program = program;
+			if ( instancing ) {
+
+				materialProperties.instancingProgram = program;
+
+			} else {
+
+				materialProperties.program = program;
+
+			}
+
 			material.program = program;
 
 		}
@@ -2002,7 +2024,7 @@ function WebGLRenderer( parameters ) {
 
 		}
 
-		var progUniforms = materialProperties.program.getUniforms(),
+		var progUniforms = program.getUniforms(),
 			uniformsList =
 				WebGLUniforms.seqWithValue( progUniforms.seq, uniforms );
 
@@ -2069,13 +2091,15 @@ function WebGLRenderer( parameters ) {
 
 		}
 
+		var instancing = Array.isArray( object );
+
 		if ( material.needsUpdate === false ) {
 
-			if ( materialProperties.program === undefined ) {
+			if ( ( instancing ? materialProperties.instancingProgram : materialProperties.program ) === undefined ) {
 
 				material.needsUpdate = true;
 
-			} else if ( materialProperties.instancing != Array.isArray( object ) ) {
+			} else if ( materialProperties.instancing != instancing ) {
 
 				material.needsUpdate = true;
 
@@ -2120,7 +2144,9 @@ function WebGLRenderer( parameters ) {
 		var refreshMaterial = false;
 		var refreshLights = false;
 
-		var program = materialProperties.program,
+		var instancing = Array.isArray( object );
+
+		var program = instancing ? materialProperties.instancingProgram : materialProperties.program,
 			p_uniforms = program.getUniforms(),
 			m_uniforms = materialProperties.__webglShader.uniforms;
 
@@ -2335,7 +2361,7 @@ function WebGLRenderer( parameters ) {
 
 		// common matrices
 
-		if ( Array.isArray(object) ) {
+		if ( instancing ) {
 
 			var modelMatrices = [];
 			var normalMatrices = [];
@@ -2428,6 +2454,7 @@ function WebGLRenderer( parameters ) {
 			p_uniforms.setValue( _gl, 'modelMatrix', object.matrixWorld );
 
 		}
+
 		return program;
 
 	}
