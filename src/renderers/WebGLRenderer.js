@@ -1417,12 +1417,17 @@ function WebGLRenderer( parameters ) {
 
 				var instancedGeometry = instanceGeometryMap[ uuid ];
 
-				for (var i = 0, l = instancedGeometry.groups.length; i < l; i ++ ) {
+				instancedGeometry.objects = [];
 
-					instancedGeometry.groups[i].objects = [];
+				if ( instancedGeometry.groups ) {
+
+					for (var i = 0, l = instancedGeometry.groups.length; i < l; i++) {
+
+						instancedGeometry.groups[i] = [];
+
+					}
 
 				}
-
 			}
 
 		}
@@ -1440,31 +1445,41 @@ function WebGLRenderer( parameters ) {
 
 			if ( ! instancedGeometry ) {
 
-				var groupCount = geometry.groups && geometry.groups.length > 0 ? geometry.groups.length : 1;
-				var groups = [];
-
-				groups.length = groupCount;
-
-				for ( var i = 0; i < groupCount; i ++ ) {
-
-					groups[ i ] = {
-						material: material,
-						objects: []
-					};
-
-				}
-
 				instancedGeometry = {
 					geometry: geometry,
-					groups: groups
+					material: material,
+					objects: []
 				};
+
+
+				if ( geometry.groups ) {
+
+					var groups = [];
+					groups.length = geometry.groups.length;
+
+					for ( var i = 0; i < groups.length; i++ ) {
+
+						groups[ i ] = [];
+
+					}
+
+					instancedGeometry.groups = groups;
+
+				}
 
 				map[ key ] = instancedGeometry;
 
 			}
 
-			var group = instancedGeometry.groups[ groupIndex || 0 ];
-			group.objects.push(object);
+			if ( groupIndex !== null ) {
+
+				instancedGeometry.groups[ groupIndex ].push( object );
+
+			} else {
+
+				instancedGeometry.objects.push( object );
+
+			}
 
 		} else {
 
@@ -1704,7 +1719,7 @@ function WebGLRenderer( parameters ) {
 
 						}
 
-						if ( material.isMultiMaterial ) {
+						if ( material.materials ) {
 
 							var groups = geometry.groups;
 							var materials = material.materials;
@@ -1804,6 +1819,42 @@ function WebGLRenderer( parameters ) {
 
 	}
 
+	function renderInstancedObjects ( objects, geometry, group, scene, camera, material ) {
+
+		if ( objects.length > 0 ) {
+
+			for ( var i = 0, l = objects.length; i < l; i++ ) {
+
+				var object = objects[ i ];
+
+				object.modelViewMatrix.multiplyMatrices( camera.matrixWorldInverse, object.matrixWorld );
+				object.normalMatrix.getNormalMatrix( object.modelViewMatrix );
+
+			}
+
+			if ( objects.length < _this.minInstancingBatchSize ) {
+
+				for ( var i = 0, l = objects.length; i < l; i++ ) {
+
+					_this.renderBufferDirect( camera, scene.fog, geometry, material, objects[ i ], group );
+
+				}
+
+			} else {
+
+				for ( var batchOffset = 0; batchOffset < objects.length; batchOffset += maxInstancingBatchSize ) {
+
+					var batch = objects.slice( batchOffset, batchOffset + Math.min( objects.length - batchOffset, maxInstancingBatchSize ) );
+					_this.renderBufferDirect( camera, scene.fog, geometry, material, batch, group );
+
+				}
+
+			}
+
+		}
+
+	}
+
 	function renderInstancedGeometryMap ( instancedGeometryMap, scene, camera, overrideMaterial ) {
 
 		for ( var uuid in instancedGeometryMap ) {
@@ -1813,47 +1864,19 @@ function WebGLRenderer( parameters ) {
 				var instancedGeometry = instancedGeometryMap[ uuid ];
 				var geometry = instancedGeometry.geometry;
 
-				for (var groupIndex = 0, groupCount = instancedGeometry.groups.length; groupIndex < groupCount; groupIndex++ ) {
+				if ( instancedGeometry.groups ) {
 
-					var instancingGroup = instancedGeometry.groups[ groupIndex ];
+					for (var groupIndex = 0, groupCount = instancedGeometry.groups.length; groupIndex < groupCount; groupIndex++ ) {
 
-					var objects = instancingGroup.objects;
-					var material = overrideMaterial ? overrideMaterial : instancingGroup.material;
+						var objects = instancedGeometry.groups[ groupIndex ];
+						var group = geometry.groups[ groupIndex ];
 
-					if ( objects.length > 0 ) {
-
-						var group = geometry.groups[ groupIndex ] || null;
-
-						for ( var i = 0, l = objects.length; i < l; i++ ) {
-
-							var object = objects[ i ];
-
-							object.modelViewMatrix.multiplyMatrices( camera.matrixWorldInverse, object.matrixWorld );
-							object.normalMatrix.getNormalMatrix( object.modelViewMatrix );
-
-						}
-
-						if ( objects.length < _this.minInstancingBatchSize ) {
-
-							for ( var i = 0, l = objects.length; i < l; i++ ) {
-
-								_this.renderBufferDirect( camera, scene.fog, geometry, material, objects[ i ], group );
-
-							}
-
-						} else {
-
-							for ( var batchOffset = 0; batchOffset < objects.length; batchOffset += maxInstancingBatchSize ) {
-
-								var batch = objects.slice( batchOffset, batchOffset + Math.min( objects.length - batchOffset, maxInstancingBatchSize ) );
-								_this.renderBufferDirect( camera, scene.fog, geometry, material, batch, group );
-
-							}
-
-						}
-
+						renderInstancedObjects( objects, geometry, group, scene, camera, overrideMaterial || instancedGeometry.material );
 					}
+
 				}
+
+				renderInstancedObjects( instancedGeometry.objects, geometry, null, scene, camera, overrideMaterial || instancedGeometry.material );
 
 			}
 
