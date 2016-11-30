@@ -890,7 +890,25 @@ function WebGLRenderer( parameters ) {
 
 		//
 
-		if ( object.isMesh ) {
+		if ( instancing ) {
+
+			switch ( geometry.drawMode ) {
+
+				case TrianglesDrawMode:
+					renderer.setMode(_gl.TRIANGLES);
+					break;
+
+				case TriangleStripDrawMode:
+					renderer.setMode(_gl.TRIANGLE_STRIP);
+					break;
+
+				case TriangleFanDrawMode:
+					renderer.setMode(_gl.TRIANGLE_FAN);
+					break;
+
+			}
+
+		} else if ( object.isMesh ) {
 
 			if ( material.wireframe === true ) {
 
