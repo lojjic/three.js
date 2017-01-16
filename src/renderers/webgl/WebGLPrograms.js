@@ -3,7 +3,7 @@
  */
 
 import { WebGLProgram } from './WebGLProgram';
-import { BackSide, DoubleSide, FlatShading, CubeUVRefractionMapping, CubeUVReflectionMapping, GammaEncoding, LinearEncoding } from '../../constants';
+import { BackSide, DoubleSide, FlatShading, CubeUVRefractionMapping, CubeUVReflectionMapping, GammaEncoding, LinearEncoding, AutoInstancingDisabled } from '../../constants';
 
 function WebGLPrograms( renderer, capabilities ) {
 
@@ -24,7 +24,7 @@ function WebGLPrograms( renderer, capabilities ) {
 	};
 
 	var parameterNames = [
-		"precision", "supportsVertexTextures", "map", "mapEncoding", "envMap", "envMapMode", "envMapEncoding",
+		"instancingMode", "precision", "supportsVertexTextures", "map", "mapEncoding", "envMap", "envMapMode", "envMapEncoding",
 		"lightMap", "aoMap", "emissiveMap", "emissiveMapEncoding", "bumpMap", "normalMap", "displacementMap", "specularMap",
 		"roughnessMap", "metalnessMap", "gradientMap",
 		"alphaMap", "combine", "vertexColors", "fog", "useFog", "fogExp",
@@ -161,8 +161,8 @@ function WebGLPrograms( renderer, capabilities ) {
 
 			shaderID: shaderID,
 
-			instancing: instancing,
-			maxInstances: renderer.getMaxInstancingBatchSize(),
+			instancingMode: instancing ? renderer.getAutoInstancingMode() : AutoInstancingDisabled,
+			maxInstances: renderer.getAutoInstancingMaxBatchSize(),
 
 			precision: precision,
 			supportsVertexTextures: capabilities.vertexTextures,

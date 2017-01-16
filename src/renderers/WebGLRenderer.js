@@ -1,4 +1,4 @@
-import { REVISION, MaxEquation, MinEquation, RGB_ETC1_Format, RGBA_PVRTC_2BPPV1_Format, RGBA_PVRTC_4BPPV1_Format, RGB_PVRTC_2BPPV1_Format, RGB_PVRTC_4BPPV1_Format, RGBA_S3TC_DXT5_Format, RGBA_S3TC_DXT3_Format, RGBA_S3TC_DXT1_Format, RGB_S3TC_DXT1_Format, SrcAlphaSaturateFactor, OneMinusDstColorFactor, DstColorFactor, OneMinusDstAlphaFactor, DstAlphaFactor, OneMinusSrcAlphaFactor, SrcAlphaFactor, OneMinusSrcColorFactor, SrcColorFactor, OneFactor, ZeroFactor, ReverseSubtractEquation, SubtractEquation, AddEquation, DepthFormat, DepthStencilFormat, LuminanceAlphaFormat, LuminanceFormat, RGBAFormat, RGBFormat, AlphaFormat, HalfFloatType, FloatType, UnsignedIntType, IntType, UnsignedShortType, ShortType, ByteType, UnsignedInt248Type, UnsignedShort565Type, UnsignedShort5551Type, UnsignedShort4444Type, UnsignedByteType, LinearMipMapLinearFilter, LinearMipMapNearestFilter, LinearFilter, NearestMipMapLinearFilter, NearestMipMapNearestFilter, NearestFilter, MirroredRepeatWrapping, ClampToEdgeWrapping, RepeatWrapping, FrontFaceDirectionCW, NoBlending, BackSide, DoubleSide, TriangleFanDrawMode, TriangleStripDrawMode, TrianglesDrawMode, NoColors, FlatShading, LinearToneMapping } from '../constants';
+import { REVISION, MaxEquation, MinEquation, RGB_ETC1_Format, RGBA_PVRTC_2BPPV1_Format, RGBA_PVRTC_4BPPV1_Format, RGB_PVRTC_2BPPV1_Format, RGB_PVRTC_4BPPV1_Format, RGBA_S3TC_DXT5_Format, RGBA_S3TC_DXT3_Format, RGBA_S3TC_DXT1_Format, RGB_S3TC_DXT1_Format, SrcAlphaSaturateFactor, OneMinusDstColorFactor, DstColorFactor, OneMinusDstAlphaFactor, DstAlphaFactor, OneMinusSrcAlphaFactor, SrcAlphaFactor, OneMinusSrcColorFactor, SrcColorFactor, OneFactor, ZeroFactor, ReverseSubtractEquation, SubtractEquation, AddEquation, DepthFormat, DepthStencilFormat, LuminanceAlphaFormat, LuminanceFormat, RGBAFormat, RGBFormat, AlphaFormat, HalfFloatType, FloatType, UnsignedIntType, IntType, UnsignedShortType, ShortType, ByteType, UnsignedInt248Type, UnsignedShort565Type, UnsignedShort5551Type, UnsignedShort4444Type, UnsignedByteType, LinearMipMapLinearFilter, LinearMipMapNearestFilter, LinearFilter, NearestMipMapLinearFilter, NearestMipMapNearestFilter, NearestFilter, MirroredRepeatWrapping, ClampToEdgeWrapping, RepeatWrapping, FrontFaceDirectionCW, NoBlending, BackSide, DoubleSide, TriangleFanDrawMode, TriangleStripDrawMode, TrianglesDrawMode, NoColors, FlatShading, LinearToneMapping, AutoInstancingDisabled, AutoInstancingAttributes, AutoInstancingUniforms, AutoInstancingTexture } from '../constants';
 import { Matrix4 } from '../math/Matrix4';
 import { WebGLUniforms } from './webgl/WebGLUniforms';
 import { UniformsUtils } from './shaders/UniformsUtils';
@@ -89,11 +89,6 @@ function WebGLRenderer( parameters ) {
 
 	this.sortOpaqueObjects = false;
 	this.sortTransparentObjects = true;
-
-	// geometry instancing
-
-	this.autoInstancing = true;
-	this.minInstancingBatchSize = 2;
 
 	// user-defined clipping
 
@@ -287,18 +282,6 @@ function WebGLRenderer( parameters ) {
 	extensions.get( 'OES_texture_half_float_linear' );
 	extensions.get( 'OES_standard_derivatives' );
 
-	if ( ! extensions.get( 'ANGLE_instanced_arrays' ) ) {
-
-		this.autoInstancing = false;
-
-	}
-
-	if ( extensions.get( 'OES_element_index_uint' ) ) {
-
-		BufferGeometry.MaxIndex = 4294967296;
-
-	}
-
 	var capabilities = new WebGLCapabilities( _gl, extensions, parameters );
 
 	var state = new WebGLState( _gl, extensions, paramThreeToGL );
@@ -315,21 +298,22 @@ function WebGLRenderer( parameters ) {
 
 	//
 
-	var instancingIndexAttribute = null;
-	var instancingTexture = null;
-	var instancingTextureSize = 64;
+	if ( extensions.get( 'OES_element_index_uint' ) ) {
 
-	// 4x4 world matrix + 3x3 normal matrix (7 vector uniforms)
-	var maxInstancingBatchSize = Math.floor( capabilities.floatVertexTextures ?
-			instancingTextureSize * instancingTextureSize / 7 :
-			Math.min( 64, ( capabilities.maxVertexUniforms - 20 ) / 7 ) );
-
-	if ( capabilities.floatVertexTextures ) {
-
-		// Push the instancing texture will be slower than repeat rendering for a small number of instances.
-		this.minInstancingBatchSize = 32;
+		BufferGeometry.MaxIndex = 4294967296;
 
 	}
+
+	// automatic geometry instancing
+
+	var autoInstancingMode = extensions.get( 'ANGLE_instanced_arrays' ) ? AutoInstancingAttributes : AutoInstancingDisabled;
+	var autoInstancingMinBatchSize = 2;
+	var autoInstancingMaxBatchSize = 2000;
+
+	var autoInstancingTexture = null;
+	var autoInstancingTextureSize = 64;
+
+	var autoInstancingAttributes = {};
 
 	var backgroundPlaneCamera, backgroundPlaneMesh;
 	var backgroundBoxCamera, backgroundBoxMesh;
@@ -481,31 +465,87 @@ function WebGLRenderer( parameters ) {
 
 	// Instancing
 
-	this.getMaxInstancingBatchSize = function () {
+	this.getAutoInstancingMinBatchSize = function () {
 
-		return maxInstancingBatchSize;
-
-	};
-
-	this.getInstancingTextureSize = function () {
-
-		return instancingTextureSize;
+		return autoInstancingMinBatchSize;
 
 	};
 
-	this.setInstancingTextureSize = function ( size ) {
+	this.getAutoInstancingMaxBatchSize = function () {
 
-		if ( ! _Math.isPowerOfTwo( size ) ) {
+		return autoInstancingMaxBatchSize;
 
-			console.error( 'THREE.WebGLRenderer.setInstancingTextureSize: invalid instancing size, must be a power of two.' );
-			return;
+	};
+
+	this.getAutoInstancingMode = function () {
+
+		return autoInstancingMode;
+
+	};
+
+	this.configAutoInstancing = function ( mode, desiredMaxBatchSize, desiredMinBatchSize ) {
+
+		switch (mode) {
+
+			case AutoInstancingAttributes:
+
+				if ( desiredMaxBatchSize !== undefined ) {
+
+					autoInstancingMaxBatchSize = desiredMaxBatchSize;
+
+				}
+				break;
+
+			case AutoInstancingUniforms:
+
+				// Leave a minimum of 20 uniforms available for general shader use
+				autoInstancingMaxBatchSize = Math.min( desiredMaxBatchSize, Math.floor ( ( capabilities.maxVertexUniforms - 20 ) / 7 ) );
+				break;
+
+			case AutoInstancingTexture:
+
+				if ( ! capabilities.floatVertexTextures ) {
+
+					return false;
+
+				}
+
+				if ( desiredMaxBatchSize === undefined ) {
+
+					desiredMaxBatchSize = autoInstancingMaxBatchSize;
+
+				}
+
+				autoInstancingTextureSize = Math.pow( 2, Math.round( Math.log( Math.sqrt( desiredMaxBatchSize * 7 ) ) / Math.log( 2 ) ) );
+				autoInstancingMaxBatchSize = Math.floor( autoInstancingTextureSize * autoInstancingTextureSize / 7 );
+
+				if ( desiredMinBatchSize === undefined ) {
+
+					autoInstancingMinBatchSize = Math.min ( autoInstancingMaxBatchSize, Math.max ( 32, autoInstancingMinBatchSize ));
+
+				}
+
+				break;
+
+			case AutoInstancingDisabled:
+
+				break;
+
+			default:
+
+				return false;
 
 		}
 
-		// Decide whether to use a texture for instancing...
+		autoInstancingMode = mode;
 
-		instancingTextureSize = size;
-		maxInstancingBatchSize = Math.floor( size * size / 7 );
+		if ( desiredMinBatchSize !== undefined ) {
+
+			autoInstancingMinBatchSize = Math.min( autoInstancingMaxBatchSize, desiredMinBatchSize );
+
+		}
+
+		return true;
 
 	};
 
@@ -849,6 +889,8 @@ function WebGLRenderer( parameters ) {
 
 		}
 
+		// attributes
+
 		if ( updateBuffers ) {
 
 			setupVertexAttributes( material, program, geometry, instancing ? object.length : undefined );
@@ -856,6 +898,80 @@ function WebGLRenderer( parameters ) {
 			if ( index !== null ) {
 
 				_gl.bindBuffer( _gl.ELEMENT_ARRAY_BUFFER, objects.getAttributeBuffer( index ) );
+
+			}
+
+		}
+
+		if ( instancing && autoInstancingMode == AutoInstancingAttributes ) {
+
+			var world1Buffer = autoInstancingAttributes.instanceWorld1.array;
+			var world2Buffer = autoInstancingAttributes.instanceWorld2.array;
+			var world3Buffer = autoInstancingAttributes.instanceWorld3.array;
+			var world4Buffer = autoInstancingAttributes.instanceWorld4.array;
+
+			var normal1Buffer = autoInstancingAttributes.instanceNormal1.array;
+			var normal2Buffer = autoInstancingAttributes.instanceNormal2.array;
+			var normal3Buffer = autoInstancingAttributes.instanceNormal3.array;
+
+			for ( var i = 0, l = object.length; i < l; i++ ) {
+
+				var instance = object[ i ];
+
+				var worldMatrix = instance.matrixWorld.elements;
+				var worldOffset = 4 * i;
+
+				world1Buffer[ worldOffset ] = worldMatrix[ 0 ];
+				world1Buffer[ worldOffset + 1 ] = worldMatrix[ 1 ];
+				world1Buffer[ worldOffset + 2 ] = worldMatrix[ 2 ];
+				world1Buffer[ worldOffset + 3 ] = worldMatrix[ 3 ];
+
+				world2Buffer[ worldOffset ] = worldMatrix[ 4 ];
+				world2Buffer[ worldOffset + 1 ] = worldMatrix[ 5 ];
+				world2Buffer[ worldOffset + 2 ] = worldMatrix[ 6 ];
+				world2Buffer[ worldOffset + 3 ] = worldMatrix[ 7 ];
+
+				world3Buffer[ worldOffset ] = worldMatrix[ 8 ];
+				world3Buffer[ worldOffset + 1 ] = worldMatrix[ 9 ];
+				world3Buffer[ worldOffset + 2 ] = worldMatrix[ 10 ];
+				world3Buffer[ worldOffset + 3 ] = worldMatrix[ 11 ];
+
+				world4Buffer[ worldOffset ] = worldMatrix[ 12 ];
+				world4Buffer[ worldOffset + 1 ] = worldMatrix[ 13 ];
+				world4Buffer[ worldOffset + 2 ] = worldMatrix[ 14 ];
+				world4Buffer[ worldOffset + 3 ] = worldMatrix[ 15 ];
+
+				var normalMatrix = instance.normalMatrix.elements;
+				var normalOffset = 3 * i;
+
+				normal1Buffer[ normalOffset ] = normalMatrix[ 0 ];
+				normal1Buffer[ normalOffset + 1 ] = normalMatrix[ 1 ];
+				normal1Buffer[ normalOffset + 2 ] = normalMatrix[ 2 ];
+
+				normal2Buffer[ normalOffset ] = normalMatrix[ 3 ];
+				normal2Buffer[ normalOffset + 1 ] = normalMatrix[ 4 ];
+				normal2Buffer[ normalOffset + 2 ] = normalMatrix[ 5 ];
+
+				normal3Buffer[ normalOffset ] = normalMatrix[ 6 ];
+				normal3Buffer[ normalOffset + 1 ] = normalMatrix[ 7 ];
+				normal3Buffer[ normalOffset + 2 ] = normalMatrix[ 8 ];
+
+			}
+
+			for ( var attributeName in autoInstancingAttributes ) {
+
+				if ( autoInstancingAttributes.hasOwnProperty( attributeName ) ) {
+
+					var attribute = autoInstancingAttributes[ attributeName];
+
+					if ( attribute.dynamic ) {
+
+						attribute.needsUpdate = true;
+						objects.updateAttribute( attribute, _gl.ARRAY_BUFFER );
+
+					}
+
+				}
 
 			}
 
@@ -1102,37 +1218,53 @@ function WebGLRenderer( parameters ) {
 
 					}
 
-				} else if ( name === 'instanceIndex' ) {
+				} else if ( name === 'instanceIndex' || /instanceWorld[1-4]/.test( name ) || /instanceNormal[1-3]/.test( name ) ) {
 
-					if ( ! instancingIndexAttribute || instancingIndexAttribute.count !== maxInstancingBatchSize ) {
+					var instancingAttribute = autoInstancingAttributes[ name ];
 
-						if ( instancingIndexAttribute ) {
+					if ( ! instancingAttribute || instancingAttribute.count !== autoInstancingMaxBatchSize ) {
 
-							properties.delete( instancingIndexAttribute );
+						if ( instancingAttribute ) {
 
-						}
-
-						var indexArray = new Float32Array( maxInstancingBatchSize );
-
-						for ( var index = 0; index < maxInstancingBatchSize; index++ ) {
-
-							indexArray[ index ] = index;
+							properties.delete( instancingAttribute );
 
 						}
 
-						instancingIndexAttribute = new BufferAttribute( indexArray, 1 );
-						objects.updateAttribute( instancingIndexAttribute, _gl.ARRAY_BUFFER );
+						var isInstanceIndex = name === 'instanceIndex';
+						var itemSize = isInstanceIndex ? 1 : name.indexOf( 'World' ) >= 0 ? 4 : 3;
+
+						instancingAttribute = new BufferAttribute( new Float32Array( autoInstancingMaxBatchSize * itemSize ), itemSize );
+
+						if ( isInstanceIndex ) {
+
+							var indexArray = instancingAttribute.array;
+
+							for ( var index = 0; index < autoInstancingMaxBatchSize; index++ ) {
+
+								indexArray[ index ] = index;
+
+							}
+
+						} else {
+
+							instancingAttribute.setDynamic( true );
+
+						}
+
+						objects.updateAttribute( instancingAttribute, _gl.ARRAY_BUFFER );
+
+						autoInstancingAttributes[ name ] = instancingAttribute;
 
 					}
 
-					var indexBuffer = objects.getAttributeBuffer( instancingIndexAttribute );
-					var indexNormalized = instancingIndexAttribute.normalized;
-					var indexSize = instancingIndexAttribute.itemSize;
+					var buffer = objects.getAttributeBuffer( instancingAttribute );
+					var normalized = instancingAttribute.normalized;
+					var itemSize = instancingAttribute.itemSize;
 
 					state.enableAttributeAndDivisor( programAttribute, 1, extension );
 
-					_gl.bindBuffer( _gl.ARRAY_BUFFER, indexBuffer );
-					_gl.vertexAttribPointer( programAttribute, indexSize, _gl.FLOAT, indexNormalized, 0, startIndex * indexSize * instancingIndexAttribute.array.BYTES_PER_ELEMENT );
+					_gl.bindBuffer( _gl.ARRAY_BUFFER, buffer );
+					_gl.vertexAttribPointer( programAttribute, itemSize, _gl.FLOAT, normalized, 0, startIndex * itemSize * instancingAttribute.array.BYTES_PER_ELEMENT );
 
 				} else if ( materialDefaultAttributeValues !== undefined ) {
 
@@ -1454,7 +1586,7 @@ function WebGLRenderer( parameters ) {
 
 	function pushRenderItem( object, geometry, material, z, groupIndex ) {
 
-		if ( _this.autoInstancing && isObjectInstanceable( object, material, geometry, groupIndex ) ) {
+		if ( autoInstancingMode != AutoInstancingDisabled && isObjectInstanceable( object, material, geometry, groupIndex ) ) {
 
 			var map = material.transparent ? transparentInstancedGeometryMap : opaqueInstancedGeometryMap;
 			var key = geometry.uuid + material.uuid;
@@ -1850,7 +1982,7 @@ function WebGLRenderer( parameters ) {
 
 			}
 
-			if ( objects.length < _this.minInstancingBatchSize ) {
+			if ( objects.length < autoInstancingMinBatchSize ) {
 
 				for ( var i = 0, l = objects.length; i < l; i++ ) {
 
@@ -1860,9 +1992,9 @@ function WebGLRenderer( parameters ) {
 
 			} else {
 
-				for ( var batchOffset = 0; batchOffset < objects.length; batchOffset += maxInstancingBatchSize ) {
+				for ( var batchOffset = 0; batchOffset < objects.length; batchOffset += autoInstancingMaxBatchSize ) {
 
-					var batch = objects.slice( batchOffset, batchOffset + Math.min( objects.length - batchOffset, maxInstancingBatchSize ) );
+					var batch = objects.slice( batchOffset, batchOffset + Math.min( objects.length - batchOffset, autoInstancingMaxBatchSize ) );
 					_this.renderBufferDirect( camera, scene.fog, geometry, material, batch, group );
 
 				}
@@ -2032,11 +2164,11 @@ function WebGLRenderer( parameters ) {
 		}
 
 		materialProperties.fog = fog;
-		materialProperties.instancing = Array.isArray( object );
+		materialProperties.instancingMode = Array.isArray( object ) ? autoInstancingMode : AutoInstancingDisabled;
 
-		if ( materialProperties.instancing ) {
+		if ( materialProperties.instancingMode != AutoInstancingDisabled ) {
 
-			materialProperties.maxInstances = _this.maxInstancingBatchSize;
+			materialProperties.maxInstances = autoInstancingMaxBatchSize;
 
 		}
 
@@ -2072,7 +2204,7 @@ function WebGLRenderer( parameters ) {
 		if (instancing) {
 			materialProperties.instancingUniformsList = uniformsList;
 		} else {
-            materialProperties.uniformsList = uniformsList;
+			materialProperties.uniformsList = uniformsList;
 		}
 
 	}
@@ -2140,7 +2272,7 @@ function WebGLRenderer( parameters ) {
 
 				material.needsUpdate = true;
 
-			} else if ( materialProperties.instancing != instancing ) {
+			} else if ( materialProperties.instancingMode != autoInstancingMode ) {
 
 				material.needsUpdate = true;
 
@@ -2158,7 +2290,7 @@ function WebGLRenderer( parameters ) {
 
 				material.needsUpdate = true;
 
-			} else if ( materialProperties.instancing && materialProperties.maxInstances !== _this.maxInstancingBatchSize ) {
+			} else if ( materialProperties.instancingMode != AutoInstancingDisabled && materialProperties.maxInstances !== autoInstancingMaxBatchSize ) {
 
 				material.needsUpdate = true;
 
@@ -2402,7 +2534,7 @@ function WebGLRenderer( parameters ) {
 
 		// common matrices
 
-		if ( instancing ) {
+		if ( instancing && ( autoInstancingMode == AutoInstancingUniforms || autoInstancingMode == AutoInstancingTexture ) ) {
 
 			var modelMatrices = [];
 			var normalMatrices = [];
@@ -2416,18 +2548,18 @@ function WebGLRenderer( parameters ) {
 
 			}
 
-			if ( capabilities.floatVertexTextures ) {
+			if ( autoInstancingMode == AutoInstancingTexture ) {
 
 				var instancingBuffer;
 
-				if ( ! instancingTexture || instancingTexture.image.width !== instancingTextureSize ) {
+				if ( ! autoInstancingTexture || autoInstancingTexture.image.width !== autoInstancingTextureSize ) {
 
-					instancingBuffer = new Float32Array( instancingTextureSize * instancingTextureSize * 4 );
-					instancingTexture = new DataTexture( instancingBuffer, instancingTextureSize, instancingTextureSize, RGBAFormat, FloatType );
+					instancingBuffer = new Float32Array( autoInstancingTextureSize * autoInstancingTextureSize * 4 );
+					autoInstancingTexture = new DataTexture( instancingBuffer, autoInstancingTextureSize, autoInstancingTextureSize, RGBAFormat, FloatType );
 
 				} else {
 
-					instancingBuffer = instancingTexture.image.data;
+					instancingBuffer = autoInstancingTexture.image.data;
 
 				}
 
@@ -2457,7 +2589,7 @@ function WebGLRenderer( parameters ) {
 					instancingBuffer[ offset + 15 ] = modelMatrix[ 15 ];
 
 					var normalMatrix = normalMatrices[ i ].elements;
-					var normalOffset = maxInstancingBatchSize * 16 + i * 12;
+					var normalOffset = autoInstancingMaxBatchSize * 16 + i * 12;
 
 					instancingBuffer[ normalOffset ] = normalMatrix[ 0 ];
 					instancingBuffer[ normalOffset + 1 ] = normalMatrix[ 1 ];
@@ -2476,10 +2608,10 @@ function WebGLRenderer( parameters ) {
 
 				}
 
-				instancingTexture.needsUpdate = true;
+				autoInstancingTexture.needsUpdate = true;
 
-				p_uniforms.setValue( _gl, 'instancingTexture', instancingTexture );
-				p_uniforms.setValue( _gl, 'instancingTextureSize', instancingTextureSize );
+				p_uniforms.setValue( _gl, 'instancingTexture', autoInstancingTexture );
+				p_uniforms.setValue( _gl, 'instancingTextureSize', autoInstancingTextureSize );
 
 			} else {
 

@@ -5,7 +5,7 @@
 import { WebGLUniforms } from './WebGLUniforms';
 import { WebGLShader } from './WebGLShader';
 import { ShaderChunk } from '../shaders/ShaderChunk';
-import { NoToneMapping, AddOperation, MixOperation, MultiplyOperation, EquirectangularRefractionMapping, CubeRefractionMapping, SphericalReflectionMapping, EquirectangularReflectionMapping, CubeUVRefractionMapping, CubeUVReflectionMapping, CubeReflectionMapping, PCFSoftShadowMap, PCFShadowMap, CineonToneMapping, Uncharted2ToneMapping, ReinhardToneMapping, LinearToneMapping, GammaEncoding, RGBDEncoding, RGBM16Encoding, RGBM7Encoding, RGBEEncoding, sRGBEncoding, LinearEncoding } from '../../constants';
+import { NoToneMapping, AddOperation, MixOperation, MultiplyOperation, EquirectangularRefractionMapping, CubeRefractionMapping, SphericalReflectionMapping, EquirectangularReflectionMapping, CubeUVRefractionMapping, CubeUVReflectionMapping, CubeReflectionMapping, PCFSoftShadowMap, PCFShadowMap, CineonToneMapping, Uncharted2ToneMapping, ReinhardToneMapping, LinearToneMapping, GammaEncoding, RGBDEncoding, RGBM16Encoding, RGBM7Encoding, RGBEEncoding, sRGBEncoding, LinearEncoding, AutoInstancingDisabled, AutoInstancingAttributes, AutoInstancingTexture } from '../../constants';
 
 var programIdCount = 0;
 
@@ -311,7 +311,7 @@ function WebGLProgram( renderer, code, material, parameters ) {
 
 		prefixVertex = [
 
-        
+
 			'precision ' + parameters.precision + ' float;',
 			'precision ' + parameters.precision + ' int;',
 
@@ -326,8 +326,9 @@ function WebGLProgram( renderer, code, material, parameters ) {
 			'#define MAX_BONES ' + parameters.maxBones,
 			'#define MAX_INSTANCES ' + parameters.maxInstances,
 
-			parameters.instancing ? '#define USE_INSTANCING' : '',
-			parameters.instancing && parameters.supportsVertexTextures ? '#define USE_INSTANCING_TEXTURE' : '',
+			parameters.instancingMode != AutoInstancingDisabled ? '#define USE_INSTANCING' : '',
+			parameters.instancingMode == AutoInstancingTexture ? '#define USE_INSTANCING_TEXTURE' : '',
+			parameters.instancingMode == AutoInstancingAttributes ? '#define USE_INSTANCING_ATTRIBUTES' : '',
 
 			( parameters.useFog && parameters.fog ) ? '#define USE_FOG' : '',
 			( parameters.useFog && parameters.fogExp ) ? '#define FOG_EXP2' : '',
@@ -415,7 +416,22 @@ function WebGLProgram( renderer, code, material, parameters ) {
 
 			'#ifdef USE_INSTANCING',
 
-			'	attribute float instanceIndex;',
+			'	#ifdef USE_INSTANCING_ATTRIBUTES',
+
+			'		attribute vec4 instanceWorld1;',
+			'		attribute vec4 instanceWorld2;',
+			'		attribute vec4 instanceWorld3;',
+			'		attribute vec4 instanceWorld4;',
+
+			'		attribute vec3 instanceNormal1;',
+			'		attribute vec3 instanceNormal2;',
+			'		attribute vec3 instanceNormal3;',
+
+			'	#else',
+
+			'		attribute float instanceIndex;',
+
+			'	#endif',
 
 			'#endif',
 

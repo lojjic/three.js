@@ -50,6 +50,20 @@
 
 		}
 
+	#elif defined USE_INSTANCING_ATTRIBUTES
+
+	    mat4 getModelMatrix() {
+
+            return mat4( instanceWorld1, instanceWorld2, instanceWorld3, instanceWorld4 );
+
+        }
+
+        mat3 getNormalMatrix() {
+
+            return mat3( instanceNormal1, instanceNormal2, instanceNormal3 );
+
+        }
+
 	#else
 
 		uniform mat4 modelMatrices[ MAX_INSTANCES ];
