@@ -427,11 +427,9 @@ function WebGLProgram( renderer, code, material, parameters ) {
 			'		attribute vec3 instanceNormal2;',
 			'		attribute vec3 instanceNormal3;',
 
-			'	#else',
-
-			'		attribute float instanceIndex;',
-
 			'	#endif',
+
+			'	attribute float instanceIndex;',
 
 			'#endif',
 
