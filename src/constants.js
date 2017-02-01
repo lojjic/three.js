@@ -125,5 +125,4 @@ export var BasicDepthPacking = 3200;
 export var RGBADepthPacking = 3201;
 export var AutoInstancingDisabled = 0;
 export var AutoInstancingAttributes = 1;
-export var AutoInstancingUniforms = 2;
-export var AutoInstancingTexture = 3;
+export var AutoInstancingTexture = 2;

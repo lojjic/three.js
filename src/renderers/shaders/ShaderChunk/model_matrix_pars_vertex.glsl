@@ -64,23 +64,6 @@
 
         }
 
-	#else
-
-		uniform mat4 modelMatrices[ MAX_INSTANCES ];
-		uniform mat3 normalMatrices[ MAX_INSTANCES ];
-
-		mat4 getModelMatrix() {
-
-			return modelMatrices[ int( instanceIndex ) ];
-
-		}
-
-		mat3 getNormalMatrix() {
-
-			return normalMatrices[ int( instanceIndex ) ];
-
-		}
-
 	#endif
 
 #else

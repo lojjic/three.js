@@ -496,12 +496,6 @@ function WebGLRenderer( parameters ) {
 				}
 				break;
 
-			case AutoInstancingUniforms:
-
-				// Leave a minimum of 20 uniforms available for general shader use
-				autoInstancingMaxBatchSize = Math.min( desiredMaxBatchSize, Math.floor ( ( capabilities.maxVertexUniforms - 20 ) / 7 ) );
-				break;
-
 			case AutoInstancingTexture:
 
 				if ( ! capabilities.floatVertexTextures ) {
@@ -2534,7 +2528,7 @@ function WebGLRenderer( parameters ) {
 
 		// common matrices
 
-		if ( instancing && ( autoInstancingMode == AutoInstancingUniforms || autoInstancingMode == AutoInstancingTexture ) ) {
+		if ( instancing && autoInstancingMode == AutoInstancingTexture ) {
 
 			var modelMatrices = [];
 			var normalMatrices = [];
@@ -2548,77 +2542,68 @@ function WebGLRenderer( parameters ) {
 
 			}
 
-			if ( autoInstancingMode == AutoInstancingTexture ) {
+			var instancingBuffer;
 
-				var instancingBuffer;
+			if ( ! autoInstancingTexture || autoInstancingTexture.image.width !== autoInstancingTextureSize ) {
 
-				if ( ! autoInstancingTexture || autoInstancingTexture.image.width !== autoInstancingTextureSize ) {
-
-					instancingBuffer = new Float32Array( autoInstancingTextureSize * autoInstancingTextureSize * 4 );
-					autoInstancingTexture = new DataTexture( instancingBuffer, autoInstancingTextureSize, autoInstancingTextureSize, RGBAFormat, FloatType );
-
-				} else {
-
-					instancingBuffer = autoInstancingTexture.image.data;
-
-				}
-
-				for ( var i = 0, l = object.length; i < l; i++ ) {
-
-					var modelMatrix = modelMatrices[ i ].elements;
-					var offset = i * 16;
-
-					instancingBuffer[ offset ] = modelMatrix[ 0 ];
-					instancingBuffer[ offset + 1 ] = modelMatrix[ 1 ];
-					instancingBuffer[ offset + 2 ] = modelMatrix[ 2 ];
-					instancingBuffer[ offset + 3 ] = modelMatrix[ 3 ];
-
-					instancingBuffer[ offset + 4 ] = modelMatrix[ 4 ];
-					instancingBuffer[ offset + 5 ] = modelMatrix[ 5 ];
-					instancingBuffer[ offset + 6 ] = modelMatrix[ 6 ];
-					instancingBuffer[ offset + 7 ] = modelMatrix[ 7 ];
-
-					instancingBuffer[ offset + 8 ]  = modelMatrix[ 8 ];
-					instancingBuffer[ offset + 9 ]  = modelMatrix[ 9 ];
-					instancingBuffer[ offset + 10 ] = modelMatrix[ 10 ];
-					instancingBuffer[ offset + 11 ] = modelMatrix[ 11 ];
-
-					instancingBuffer[ offset + 12 ] = modelMatrix[ 12 ];
-					instancingBuffer[ offset + 13 ] = modelMatrix[ 13 ];
-					instancingBuffer[ offset + 14 ] = modelMatrix[ 14 ];
-					instancingBuffer[ offset + 15 ] = modelMatrix[ 15 ];
-
-					var normalMatrix = normalMatrices[ i ].elements;
-					var normalOffset = autoInstancingMaxBatchSize * 16 + i * 12;
-
-					instancingBuffer[ normalOffset ] = normalMatrix[ 0 ];
-					instancingBuffer[ normalOffset + 1 ] = normalMatrix[ 1 ];
-					instancingBuffer[ normalOffset + 2 ] = normalMatrix[ 2 ];
-					instancingBuffer[ normalOffset + 3 ] = 0;
-
-					instancingBuffer[ normalOffset + 4 ] = normalMatrix[ 3 ];
-					instancingBuffer[ normalOffset + 5 ] = normalMatrix[ 4 ];
-					instancingBuffer[ normalOffset + 6 ] = normalMatrix[ 5 ];
-					instancingBuffer[ normalOffset + 7 ] = 0;
-
-					instancingBuffer[ normalOffset + 8 ] = normalMatrix[ 6 ];
-					instancingBuffer[ normalOffset + 9 ] = normalMatrix[ 7 ];
-					instancingBuffer[ normalOffset + 10 ] = normalMatrix[ 8 ];
-					instancingBuffer[ normalOffset + 11 ] = 0;
-
-				}
-
-				autoInstancingTexture.needsUpdate = true;
-
-				p_uniforms.setValue( _gl, 'instancingTexture', autoInstancingTexture );
-				p_uniforms.setValue( _gl, 'instancingTextureSize', autoInstancingTextureSize );
+				instancingBuffer = new Float32Array( autoInstancingTextureSize * autoInstancingTextureSize * 4 );
+				autoInstancingTexture = new DataTexture( instancingBuffer, autoInstancingTextureSize, autoInstancingTextureSize, RGBAFormat, FloatType );
 
 			} else {
 
-				p_uniforms.setValue( _gl, 'modelMatrices', modelMatrices );
-				p_uniforms.setValue( _gl, 'normalMatrices', normalMatrices );
+				instancingBuffer = autoInstancingTexture.image.data;
 
 			}
+
+			for ( var i = 0, l = object.length; i < l; i++ ) {
+
+				var modelMatrix = modelMatrices[ i ].elements;
+				var offset = i * 16;
+
+				instancingBuffer[ offset ] = modelMatrix[ 0 ];
+				instancingBuffer[ offset + 1 ] = modelMatrix[ 1 ];
+				instancingBuffer[ offset + 2 ] = modelMatrix[ 2 ];
+				instancingBuffer[ offset + 3 ] = modelMatrix[ 3 ];
+
+				instancingBuffer[ offset + 4 ] = modelMatrix[ 4 ];
+				instancingBuffer[ offset + 5 ] = modelMatrix[ 5 ];
+				instancingBuffer[ offset + 6 ] = modelMatrix[ 6 ];
+				instancingBuffer[ offset + 7 ] = modelMatrix[ 7 ];
+
+				instancingBuffer[ offset + 8 ]  = modelMatrix[ 8 ];
+				instancingBuffer[ offset + 9 ]  = modelMatrix[ 9 ];
+				instancingBuffer[ offset + 10 ] = modelMatrix[ 10 ];
+				instancingBuffer[ offset + 11 ] = modelMatrix[ 11 ];
+
+				instancingBuffer[ offset + 12 ] = modelMatrix[ 12 ];
+				instancingBuffer[ offset + 13 ] = modelMatrix[ 13 ];
+				instancingBuffer[ offset + 14 ] = modelMatrix[ 14 ];
+				instancingBuffer[ offset + 15 ] = modelMatrix[ 15 ];
+
+				var normalMatrix = normalMatrices[ i ].elements;
+				var normalOffset = autoInstancingMaxBatchSize * 16 + i * 12;
+
+				instancingBuffer[ normalOffset ] = normalMatrix[ 0 ];
+				instancingBuffer[ normalOffset + 1 ] = normalMatrix[ 1 ];
+				instancingBuffer[ normalOffset + 2 ] = normalMatrix[ 2 ];
+				instancingBuffer[ normalOffset + 3 ] = 0;
+
+				instancingBuffer[ normalOffset + 4 ] = normalMatrix[ 3 ];
+				instancingBuffer[ normalOffset + 5 ] = normalMatrix[ 4 ];
+				instancingBuffer[ normalOffset + 6 ] = normalMatrix[ 5 ];
+				instancingBuffer[ normalOffset + 7 ] = 0;
+
+				instancingBuffer[ normalOffset + 8 ] = normalMatrix[ 6 ];
+				instancingBuffer[ normalOffset + 9 ] = normalMatrix[ 7 ];
+				instancingBuffer[ normalOffset + 10 ] = normalMatrix[ 8 ];
+				instancingBuffer[ normalOffset + 11 ] = 0;
+
+			}
+
+			autoInstancingTexture.needsUpdate = true;
+
+			p_uniforms.setValue( _gl, 'instancingTexture', autoInstancingTexture );
+			p_uniforms.setValue( _gl, 'instancingTextureSize', autoInstancingTextureSize );
 
 		} else {
 
