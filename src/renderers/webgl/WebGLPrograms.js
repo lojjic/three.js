@@ -138,7 +138,7 @@ function WebGLPrograms( renderer, capabilities ) {
 
 				for ( var i = 0, l = object.length; i < l; i++ ) {
 
-					if ( object[i].receiveShadow ) {
+					if ( object[ i ].receiveShadow ) {
 
 						shadowMapEnabled = true;
 						break;

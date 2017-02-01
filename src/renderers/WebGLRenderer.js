@@ -485,7 +485,7 @@ function WebGLRenderer( parameters ) {
 
 	this.configAutoInstancing = function ( mode, desiredMaxBatchSize, desiredMinBatchSize ) {
 
-		switch (mode) {
+		switch ( mode ) {
 
 			case AutoInstancingAttributes:
 
@@ -1005,15 +1005,15 @@ function WebGLRenderer( parameters ) {
 			switch ( geometry.drawMode ) {
 
 				case TrianglesDrawMode:
-					renderer.setMode(_gl.TRIANGLES);
+					renderer.setMode( _gl.TRIANGLES );
 					break;
 
 				case TriangleStripDrawMode:
-					renderer.setMode(_gl.TRIANGLE_STRIP);
+					renderer.setMode( _gl.TRIANGLE_STRIP );
 					break;
 
 				case TriangleFanDrawMode:
-					renderer.setMode(_gl.TRIANGLE_FAN);
+					renderer.setMode( _gl.TRIANGLE_FAN );
 					break;
 
 			}
@@ -1384,8 +1384,8 @@ function WebGLRenderer( parameters ) {
 		opaqueObjectsLastIndex = - 1;
 		transparentObjectsLastIndex = - 1;
 
-		resetInstancedGeometryMap(opaqueInstancedGeometryMap);
-		resetInstancedGeometryMap(transparentInstancedGeometryMap);
+		resetInstancedGeometryMap( opaqueInstancedGeometryMap );
+		resetInstancedGeometryMap( transparentInstancedGeometryMap );
 
 		sprites.length = 0;
 		lensFlares.length = 0;
@@ -1565,9 +1565,9 @@ function WebGLRenderer( parameters ) {
 
 				if ( instancedGeometry.groups ) {
 
-					for (var i = 0, l = instancedGeometry.groups.length; i < l; i++) {
+					for ( var i = 0, l = instancedGeometry.groups.length; i < l; i++ ) {
 
-						instancedGeometry.groups[i] = [];
+						instancedGeometry.groups[ i ] = [];
 
 					}
 
@@ -2010,7 +2010,7 @@ function WebGLRenderer( parameters ) {
 
 				if ( instancedGeometry.groups ) {
 
-					for (var groupIndex = 0, groupCount = instancedGeometry.groups.length; groupIndex < groupCount; groupIndex++ ) {
+					for ( var groupIndex = 0, groupCount = instancedGeometry.groups.length; groupIndex < groupCount; groupIndex++ ) {
 
 						var objects = instancedGeometry.groups[ groupIndex ];
 						var group = geometry.groups[ groupIndex ];
@@ -2195,7 +2195,7 @@ function WebGLRenderer( parameters ) {
 			uniformsList =
 				WebGLUniforms.seqWithValue( progUniforms.seq, uniforms );
 
-		if (instancing) {
+		if ( instancing ) {
 			materialProperties.instancingUniformsList = uniformsList;
 		} else {
 			materialProperties.uniformsList = uniformsList;
