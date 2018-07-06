@@ -32,33 +32,13 @@ function Object3D() {
 	this.up = Object3D.DefaultUp.clone();
 
 	var position = new Vector3();
-	var rotation = new Euler();
 	var quaternion = new Quaternion();
 	var scale = new Vector3( 1, 1, 1 );
-
-	function onRotationChange() {
-
-		quaternion.setFromEuler( rotation, false );
-
-	}
-
-	function onQuaternionChange() {
-
-		rotation.setFromQuaternion( quaternion, undefined, false );
-
-	}
-
-	rotation.onChange( onRotationChange );
-	quaternion.onChange( onQuaternionChange );
 
 	Object.defineProperties( this, {
 		position: {
 			enumerable: true,
 			value: position
-		},
-		rotation: {
-			enumerable: true,
-			value: rotation
 		},
 		quaternion: {
 			enumerable: true,
@@ -835,5 +815,48 @@ Object3D.prototype = Object.assign( Object.create( EventDispatcher.prototype ), 
 
 } );
 
+// Define the Euler "rotation" property, initialized lazily on first access to
+// avoid the overhead of the Euler object and its bidirectional sync with the
+// quaternion if it is never accessed.
+Object.defineProperty( Object3D.prototype, 'rotation', {
+
+	enumerable: true,
+
+	get: function() {
+
+		// Create the euler and do initial sync
+		var rotation = new Euler();
+		var quaternion = this.quaternion;
+		rotation.setFromQuaternion(quaternion, undefined, false);
+
+		// Set up bidirectional sync
+		rotation._quaternion = quaternion;
+		quaternion._rotation = rotation;
+		rotation.onChange( onRotationChange );
+		quaternion.onChange( onQuaternionChange );
+
+		// Promote to instance property without a getter
+		Object.defineProperty( this, 'rotation', {
+			enumerable: true,
+			value: rotation
+		} );
+
+		return rotation;
+
+	}
+
+} );
+
+function onQuaternionChange() {
+
+	this._rotation.setFromQuaternion( this, undefined, false );
+
+}
+
+function onRotationChange() {
+
+	this._quaternion.setFromEuler( this, false );
+
+}
 
 export { Object3D };
